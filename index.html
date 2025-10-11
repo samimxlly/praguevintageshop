@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>MACH.ENGINEERING Shuffle — dot centered</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+
+<style>
+:root {
+  --font-size: 64px;
+  --display-duration: 1800ms;
+  --dot-gap: 12px;
+}
+
+html, body {
+  height: 100%;
+  margin: 0;
+  background: #fff;
+  font-family: 'IBM Plex Mono', monospace;
+  overflow-x: hidden;
+}
+
+#digital-clock {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  font-size: 14px;
+  color: #333;
+  z-index: 2000;
+  opacity: 0;
+  transition: opacity 0.5s ease;
+}
+
+.item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  cursor: pointer;
+  transition: transform 0.5s ease, opacity 0.5s ease;
+}
+
+/* ===== SPLASH TEXT ===== */
+#shuffle-wrapper {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 1000;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  transition: top 1.5s ease, transform 1.5s ease, opacity 0.5s ease;
+}
+
+#shuffle-wrapper.move-up {
+  top: 5%;
+  transform: translateX(-50%);
+}
+
+#shuffle-text {
+  position: relative;
+  display: inline-block;
+  font-size: var(--font-size);
+  white-space: nowrap;
+  perspective: 800px;
+}
+
+/* rotation effect */
+.dot-container {
+  position: relative;
+  display: inline-block;
+  animation: rotateText 10s linear infinite;
+  transform-style: preserve-3d;
+}
+
+.dot-container .center.dot {
+  animation: none;
+  transform: translate(-50%, -50%) rotateY(0deg);
+}
+
+@keyframes rotateText {
+  0% { transform: rotateY(0deg); }
+  100% { transform: rotateY(360deg); }
+}
+
+.dot-container .center {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-weight: 700;
+}
+
+.dot-container .left,
+.dot-container .right {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.dot-container .left { right: 50%; text-align: right; padding-right: var(--dot-gap); }
+.dot-container .right { left: 50%; text-align: left; padding-left: var(--dot-gap); }
+
+/* ===== MAIN PAGE ===== */
+#main-page { opacity:0; transition: opacity 0.5s ease; }
+
+.container {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 20px;
+  padding: 20px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.image-wrapper {
+  position: relative;
+  width: 80%;
+  padding-top: 80%;
+  overflow: hidden;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  background: #f5f5f5;
+  transition: transform 0.5s ease;
+}
+
+.image-wrapper img {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  object-fit: cover;
+}
+
+.description, .price, .add-cart {
+  text-align: center;
+  margin-top: 8px;
+  font-size: 14px;
+  color: #333;
+}
+
+.description a { text-decoration: none; color: #333; transition: opacity 0.2s ease; }
+.description a:hover { opacity: 0.6; }
+
+#back-btn {
+  position: fixed;
+  top: 20px;
+  left: 20px;
+  font-size: 14px;
+  cursor: pointer;
+  display: none;
+  z-index: 2000;
+}
+
+/* ===== ZOOMED ITEM ===== */
+.zoomed-wrapper {
+  position: fixed;
+  z-index: 1500;
+  transition: all 0.5s ease;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: auto;
+}
+
+/* ==== IMAGE SLIDER ==== */
+.image-slider {
+  position: relative;
+  width: 70%;
+  height: auto;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.image-slider img {
+  width: 100%;
+  height: auto;
+  max-width: 95vw;  /* responsive for small screens */
+  max-height: 80vh; /* prevent tall overflow */
+  border-radius: 12px;
+  object-fit: contain;
+  transition: opacity 0.3s ease; /* smooth fade on change */
+}
+
+.arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 32px;
+  font-weight: bold;
+  color: #333;
+  background: rgba(255,255,255,0.8);
+  padding: 6px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.2s ease;
+}
+.arrow:hover { background: rgba(0,0,0,0.1); }
+.arrow.left {font-size: 14px; left: -40px; }
+.arrow.right {font-size: 14px; right: -40px; }
+
+.fade-out { opacity: 0 !important; pointer-events: none; }
+
+@media (max-width: 800px) {
+  #shuffle-text { font-size: clamp(22px, 4vw, 64px); }
+  .arrow {  left: +250px; right: +250px; }
+}
+</style>
+</head>
+
+<body>
+
+<div id="shuffle-wrapper">
+  <div id="shuffle-text"></div>
+</div>
+
+<div id="back-btn">&lt;</div>
+
+<div id="main-page">
+  <br><br><br><br><br><br><br><br><br>
+  <div class="container" id="products-container">
+    <!-- Products will be loaded here by client JS -->
+  </div>
+</div>
+
+<script>
+const displayDuration = 1800;
+const texts = [
+  { txt: 'MACH.ENGINEERING', cls: 'helvetica' },
+  { txt: 'MACH. エンジニアリング', cls: 'helvetica' },
+  { txt: 'МАСН.ЕНГИНЕЕРИНГ', cls: 'helvetica' },
+  { txt: '马赫.工程', cls: 'noto' },
+  { txt: 'MACH.엔지니어링', cls: 'mixed' }
+];
+
+const wrapper = document.getElementById('shuffle-wrapper');
+const container = document.getElementById('shuffle-text');
+let index = 1;
+
+const dotContainer = document.createElement('div');
+dotContainer.className = 'dot-container helvetica';
+dotContainer.innerHTML = `
+  <div class="left helvetica"></div>
+  <div class="center dot">.</div>
+  <div class="right helvetica"></div>
+`;
+container.appendChild(dotContainer);
+
+function updateText(text, cls) {
+  const dotPos = text.indexOf('.');
+  const left = text.slice(0, dotPos);
+  const right = text.slice(dotPos + 1);
+  const leftEl = dotContainer.querySelector('.left');
+  const rightEl = dotContainer.querySelector('.right');
+  leftEl.innerHTML = left;
+  rightEl.innerHTML = right;
+  leftEl.className = `left ${cls}`;
+  rightEl.className = `right ${cls}`;
+}
+
+function startLoop() {
+  setInterval(() => {
+    const { txt, cls } = texts[index];
+    updateText(txt, cls);
+    index = (index + 1) % texts.length;
+  }, displayDuration);
+}
+
+function initialSequence() {
+  updateText('MACH.ENGINEERING', 'helvetica');
+  setTimeout(() => {
+    wrapper.classList.add('move-up');
+    setTimeout(() => {
+      document.getElementById('main-page').style.opacity = '1';
+      const clockEl = document.getElementById('digital-clock');
+      clockEl.style.opacity = '1';
+      updateClock();
+      startLoop();
+    }, 2000);
+  }, 1410);
+}
+
+// ===== PRODUCT IMAGES =====
+let productsData = [];
+const productsContainer = document.getElementById('products-container');
+
+async function loadProducts() {
+  try {
+    const res = await fetch('/api/products');
+    productsData = await res.json();
+    renderProducts();
+  } catch (err) {
+    console.error('Failed to load products', err);
+  }
+}
+
+function renderProducts() {
+  productsContainer.innerHTML = '';
+  productsData.forEach((p, i) => {
+    const item = document.createElement('div');
+    item.className = 'item';
+
+    const imgWrap = document.createElement('div');
+    imgWrap.className = 'image-wrapper';
+    const img = document.createElement('img');
+    img.src = p.localImage || p.img || 'test.png';
+    img.alt = p.title || 'Product';
+    imgWrap.appendChild(img);
+
+    const desc = document.createElement('div');
+    desc.className = 'description';
+    const a = document.createElement('a');
+    a.href = p.link;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.textContent = p.title || p.link;
+    desc.appendChild(a);
+
+    item.appendChild(imgWrap);
+    item.appendChild(desc);
+    productsContainer.appendChild(item);
+
+    item.addEventListener('click', () => openZoom(i));
+  });
+}
+
+const items = () => document.querySelectorAll('.item');
+const backBtn = document.getElementById('back-btn');
+let zoomedWrapper = null;
+
+function openZoom(i) {
+  const itemEl = document.querySelectorAll('.item')[i];
+  if (!itemEl || zoomedWrapper) return;
+  const rect = itemEl.getBoundingClientRect();
+  zoomedWrapper = document.createElement('div');
+  zoomedWrapper.className = 'zoomed-wrapper';
+  zoomedWrapper.style.top = rect.top + 'px';
+  zoomedWrapper.style.left = rect.left + 'px';
+  zoomedWrapper.style.width = rect.width + 'px';
+  zoomedWrapper.style.height = rect.height + 'px';
+
+  const slider = document.createElement('div');
+  slider.className = 'image-slider';
+  const img = document.createElement('img');
+  img.src = productsData[i].localImage || productsData[i].img || 'test.png';
+  slider.appendChild(img);
+
+  zoomedWrapper.appendChild(slider);
+
+  const description = document.createElement('div');
+  description.className = 'description';
+  const a = document.createElement('a');
+  a.href = productsData[i].link;
+  a.target = '_blank';
+  a.rel = 'noopener noreferrer';
+  a.textContent = productsData[i].title || productsData[i].link;
+  description.appendChild(a);
+  description.style.marginTop = '10px';
+
+  const price = document.createElement('div');
+  price.className = 'price';
+  price.innerText = productsData[i].price || '';
+
+  const buy = document.createElement('div');
+  buy.className = 'add-cart';
+  buy.innerText = 'BUY';
+  buy.style.cursor = 'pointer';
+  buy.onclick = () => window.open(productsData[i].link, '_blank');
+
+  zoomedWrapper.appendChild(description);
+  zoomedWrapper.appendChild(price);
+  zoomedWrapper.appendChild(buy);
+  document.body.appendChild(zoomedWrapper);
+
+  items().forEach(it => it.classList.add('fade-out'));
+  wrapper.style.opacity = '0';
+  backBtn.style.display = 'block';
+
+  let targetWidth, targetTop, targetLeft;
+  if (window.innerWidth < 800) {
+    targetWidth = Math.min(window.innerWidth * 0.95, 350);
+    targetTop = window.innerHeight * 0.05;
+  } else {
+    targetWidth = window.innerWidth * 0.4;
+    targetTop = window.innerHeight * 0.1;
+  }
+  targetLeft = window.innerWidth * 0.5 - targetWidth / 2;
+
+  setTimeout(() => {
+    zoomedWrapper.style.top = targetTop + 'px';
+    zoomedWrapper.style.left = targetLeft + 'px';
+    zoomedWrapper.style.width = targetWidth + 'px';
+  }, 20);
+}
+
+backBtn.addEventListener('click', () => {
+  if (!zoomedWrapper) return;
+  zoomedWrapper.remove();
+  items.forEach(i => i.classList.remove('fade-out'));
+  wrapper.style.opacity = '1';
+  zoomedWrapper = null;
+  backBtn.style.display = 'none';
+}); 
+
+window.onload = initialSequence;
+
+// load products once page is ready
+window.addEventListener('DOMContentLoaded', () => {
+  loadProducts();
+});
+
+function updateClock() {
+  const clockEl = document.getElementById('digital-clock');
+  const now = new Date();
+  clockEl.textContent = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
+}
+setInterval(updateClock, 1000);
+</script>
+
+<div class="item"><div id="digital-clock"></div></div>
+</body>
+</html>
