@@ -39,12 +39,45 @@ jobs:
           SKIP_IMAGE_DOWNLOAD: '1'
         run: node scraper.js
 
+      - name: Debug: show products.json and git status
+        run: |
+          echo "==== Repo info ===="
+          git rev-parse --abbrev-ref HEAD || true
+          echo "HEAD:" $(git rev-parse HEAD)
+          echo "==== Files ===="
+          ls -la || true
+          echo "==== products.json check ===="
+          if [ -f products.json ]; then
+            echo "products.json exists"
+            if command -v sha256sum >/dev/null 2>&1; then
+              sha256sum products.json || true
+            else
+              shasum -a 256 products.json || true
+            fi
+            echo "---- head of products.json ----"
+            sed -n '1,120p' products.json || true
+          else
+            echo "products.json NOT FOUND"
+          fi
+          echo "==== git status (before add) ===="
+          git status --porcelain || true
+          echo "==== git ls-files --modified ===="
+          git ls-files --modified || true
+
       - name: Commit products.json if changed
         run: |
           git add products.json public/images || true
           if ! git diff --quiet --staged; then
+            echo "Staged changes:" && git diff --staged --name-only || true
             git commit -m "chore: update products.json (scraped)"
-            git push origin HEAD:main
+            echo "Pushing to origin..."
+            git push origin HEAD:main || true
+            echo "Push exit:$?"
           else
             echo "No changes to commit"
           fi
+
+      - name: Debug: git log last 5 commits
+        run: |
+          echo "==== last commits ===="
+          git --no-pager log -n 5 --oneline || true
