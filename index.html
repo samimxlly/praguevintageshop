@@ -293,7 +293,7 @@ const productsContainer = document.getElementById('products-container');
 
 async function loadProducts() {
   try {
-    const res = await fetch('/api/products');
+    const res = await fetch('products.json');
     productsData = await res.json();
     renderProducts();
   } catch (err) {
