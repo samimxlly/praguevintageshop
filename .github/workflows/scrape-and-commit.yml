@@ -7,15 +7,24 @@ on:
   push:
     branches: [ main ]
 
-jobs:
+permissions:
+  contents: write
+
+
   scrape:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          persist-credentials: true
+          persist-credentials: false
           fetch-depth: 0
+
+      - name: Set up git for pushing
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
 
       - name: Use Node.js
         uses: actions/setup-node@v4
@@ -27,15 +36,11 @@ jobs:
 
       - name: Run scraper
         env:
-          # skip image download on CI to save time/space; change to '0' to download
           SKIP_IMAGE_DOWNLOAD: '1'
-        run: |
-          node scraper.js
+        run: node scraper.js
 
       - name: Commit products.json if changed
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add products.json public/images || true
           if ! git diff --quiet --staged; then
             git commit -m "chore: update products.json (scraped)"
