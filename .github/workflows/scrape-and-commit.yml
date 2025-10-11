@@ -39,7 +39,7 @@ jobs:
           SKIP_IMAGE_DOWNLOAD: '1'
         run: node scraper.js
 
-      - name: Debug: show products.json and git status
+      - name: "Debug: show products.json and git status"
         run: |
           echo "==== Repo info ===="
           git rev-parse --abbrev-ref HEAD || true
@@ -77,7 +77,7 @@ jobs:
             echo "No changes to commit"
           fi
 
-      - name: Debug: git log last 5 commits
+      - name: "Debug: git log last 5 commits"
         run: |
           echo "==== last commits ===="
           git --no-pager log -n 5 --oneline || true
