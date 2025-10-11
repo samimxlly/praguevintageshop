@@ -60,7 +60,7 @@ jobs:
           kill $(cat server.pid)
           rm server.pid
 
-      - name: Debug: show working directory and diff
+      - name: Debug show working directory and diff
         run: |
           echo "==== Current working directory ===="
           pwd
