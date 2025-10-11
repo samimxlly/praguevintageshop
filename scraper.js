@@ -34,11 +34,15 @@ function sanitizeFilename(s) {
 async function syncProfile() {
   console.log('Syncing profile (puppeteer)', PROFILE_URL);
 
-  const browser = await puppeteer.launch({
+  // Allow CI (GitHub Actions) to use Puppeteer's bundled Chromium. Do not hardcode executablePath.
+  const launchOptions = {
     headless: 'new',
-    args: ['--no-sandbox', '--disable-setuid-sandbox'],
-    executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
-  });
+    args: ['--no-sandbox', '--disable-setuid-sandbox']
+  };
+  if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+    launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+  }
+  const browser = await puppeteer.launch(launchOptions);
   const page = await browser.newPage();
   await page.goto(PROFILE_URL, { waitUntil: 'networkidle2', timeout: 60000 });
 
@@ -113,9 +117,14 @@ async function syncProfile() {
   await browser.close();
 
   // Download images and add localImage
+  const skipImages = process.env.SKIP_IMAGE_DOWNLOAD === '1';
   for (let i = 0; i < products.length; i++) {
     const p = products[i];
     if (p.img && p.img.startsWith('http')) {
+      if (skipImages) {
+        p.localImage = p.img;
+        continue;
+      }
       try {
         const ext = path.extname(new URL(p.img).pathname) || '.jpg';
         const fname = sanitizeFilename(`${i}_${path.basename(p.link)}${ext}`);

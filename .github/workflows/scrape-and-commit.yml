@@ -1,0 +1,45 @@
+name: Scrape and commit
+
+on:
+  schedule:
+    - cron: '*/3 * * * *' # every 3 minutes
+  workflow_dispatch: {}
+  push:
+    branches: [ main ]
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+          fetch-depth: 0
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Run scraper
+        env:
+          # skip image download on CI to save time/space; change to '0' to download
+          SKIP_IMAGE_DOWNLOAD: '1'
+        run: |
+          node scraper.js
+
+      - name: Commit products.json if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add products.json public/images || true
+          if ! git diff --quiet --staged; then
+            git commit -m "chore: update products.json (scraped)"
+            git push origin HEAD:main
+          else
+            echo "No changes to commit"
+          fi
