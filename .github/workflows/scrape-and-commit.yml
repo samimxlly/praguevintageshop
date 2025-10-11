@@ -40,13 +40,13 @@ jobs:
         run: node scraper.js
 
       - name: Debug: show working directory and diff
-        run: |
-          echo "==== Current working directory ===="
-          pwd
-          echo "==== products.json git diff ===="
-          git diff products.json || true
-          echo "==== products.json head ===="
-          head -40 products.json || true
+          run: |
+            echo "==== Current working directory ===="
+            pwd
+            echo "==== products.json git diff ===="
+            git diff products.json || true
+            echo "==== products.json head ===="
+            head -40 products.json || true
 
       - name: "Debug: show products.json and git status"
         run: |
