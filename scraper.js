@@ -1,190 +1,137 @@
 /**
- * 🧭 Vinted Profile Scraper
- * ---------------------------------
- * Scrapes all listings from a Vinted profile (title, price, image, link)
- * and saves them locally as JSON + downloaded images.
- *
- * ✅ Uses Puppeteer Stealth Plugin to avoid detection
- * ✅ Auto-scrolls to load all listings
- * ✅ Saves results to products.json
- * ✅ Downloads images to /public/images
- *
- * Run with:   node vintedSync.js
- * Dependencies: puppeteer-extra, puppeteer-extra-plugin-stealth, node-fetch@2
+ * Enhanced Vinted Scraper Module
+ * Works with server.js and GitHub Actions
  */
 
-const puppeteer = require('puppeteer-extra');
-const StealthPlugin = require('puppeteer-extra-plugin-stealth');
-const fetch = require('node-fetch');
-const fs = require('fs');
-const path = require('path');
+const puppeteer = require("puppeteer-extra");
+const StealthPlugin = require("puppeteer-extra-plugin-stealth");
+const fs = require("fs");
+const path = require("path");
+const fetch = (...args) =>
+  import("node-fetch").then(({ default: fetch }) => fetch(...args));
 
 puppeteer.use(StealthPlugin());
 
-// === CONFIG ===
-const PROFILE_URL = 'https://www.vinted.cz/member/288077372-praguevintageshop';
-const PRODUCTS_FILE = path.join(__dirname, 'products.json');
-const IMAGES_DIR = path.join(__dirname, 'public', 'images');
+const PROFILE_URL =
+  process.env.VINTED_URL ||
+  "https://www.vinted.cz/member/288077372-praguevintageshop";
 
-// Ensure folders exist
-if (!fs.existsSync(path.join(__dirname, 'public'))) fs.mkdirSync(path.join(__dirname, 'public'));
+const PRODUCTS_FILE = path.join(__dirname, "products.json");
+const IMAGES_DIR = path.join(__dirname, "public", "images");
 if (!fs.existsSync(IMAGES_DIR)) fs.mkdirSync(IMAGES_DIR, { recursive: true });
 
-// === HELPERS ===
+const SKIP_IMAGE_DOWNLOAD = process.env.SKIP_IMAGE_DOWNLOAD === "1";
+
+function log(msg) {
+  const now = new Date().toISOString().replace("T", " ").split(".")[0];
+  console.log(`[${now}] ${msg}`);
+}
+
 function sanitizeFilename(s) {
-  return s.replace(/[^a-z0-9-_\.]/gi, '_').slice(0, 200);
+  return s.replace(/[^a-z0-9-_\.]/gi, "_").slice(0, 120);
 }
 
 async function downloadImage(url, filename) {
   const outPath = path.join(IMAGES_DIR, filename);
   try {
     const res = await fetch(url);
-    if (!res.ok) throw new Error(`Fetch failed: ${res.statusText}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const fileStream = fs.createWriteStream(outPath);
     await new Promise((resolve, reject) => {
       res.body.pipe(fileStream);
-      res.body.on('error', reject);
-      fileStream.on('finish', resolve);
+      res.body.on("error", reject);
+      fileStream.on("finish", resolve);
     });
     return `/public/images/${filename}`;
   } catch (err) {
-    console.warn('⚠️ Failed to download image:', url, err.message);
+    log(`⚠️ Image download failed: ${url} (${err.message})`);
     return url;
   }
 }
 
-async function autoScroll(page) {
-  await page.evaluate(async () => {
-    await new Promise((resolve) => {
-      let totalHeight = 0;
-      const distance = 600;
-      const timer = setInterval(() => {
-        const scrollHeight = document.body.scrollHeight;
-        window.scrollBy(0, distance);
-        totalHeight += distance;
-        if (totalHeight >= scrollHeight - window.innerHeight) {
-          clearInterval(timer);
-          resolve();
-        }
-      }, 500);
-    });
-  });
+/**
+ * Scrape with retry logic
+ */
+async function syncProfile(maxRetries = 3) {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await scrapeOnce();
+    } catch (err) {
+      log(`❌ Attempt ${attempt}/${maxRetries} failed: ${err.message}`);
+      if (attempt < maxRetries) {
+        log("⏳ Retrying in 10 seconds...");
+        await new Promise((r) => setTimeout(r, 10000));
+      } else {
+        log("🚫 All retries failed. Giving up.");
+        throw err;
+      }
+    }
+  }
 }
 
-// === MAIN ===
-async function syncProfile() {
-  console.log(`🧭 Syncing profile: ${PROFILE_URL}`);
+async function scrapeOnce() {
+  log(`Starting scrape of ${PROFILE_URL}`);
 
-  const browser = await puppeteer.launch({
-    headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox']
-  });
+  const launchOptions = {
+    headless: "new",
+    args: ["--no-sandbox", "--disable-setuid-sandbox"],
+  };
+  const browser = await puppeteer.launch(launchOptions);
   const page = await browser.newPage();
 
-  await page.setUserAgent(
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122.0 Safari/537.36'
-  );
-  await page.setViewport({ width: 1280, height: 900 });
+  await page.goto(PROFILE_URL, { waitUntil: "networkidle2", timeout: 0 });
 
-  await page.goto(PROFILE_URL, { waitUntil: 'networkidle2', timeout: 60000 });
-
-  console.log('🔄 Scrolling to load all items...');
-  await autoScroll(page);
-
-  console.log('📦 Extracting product links...');
-  const productLinks = await page.evaluate(() => {
-    const items = Array.from(document.querySelectorAll('a[href*="/items/"]'));
-    const seen = new Set();
-    const links = [];
-    for (const el of items) {
-      const href = el.getAttribute('href');
-      if (!href) continue;
-      const full = href.startsWith('http') ? href : `https://www.vinted.cz${href}`;
-      if (!seen.has(full)) {
-        seen.add(full);
-        links.push(full);
-      }
-    }
-    return links;
-  });
-
-  console.log(`✅ Found ${productLinks.length} products`);
-
-  const products = [];
-
-  for (let i = 0; i < productLinks.length; i++) {
-    const link = productLinks[i];
-    console.log(`🛍️ [${i + 1}/${productLinks.length}] ${link}`);
-    const prodPage = await browser.newPage();
-    try {
-      await prodPage.goto(link, { waitUntil: 'networkidle2', timeout: 40000 });
-      await prodPage.waitForSelector('h1, [class*="price"], img[src*="vinted.net"]', { timeout: 15000 });
-
-      const data = await prodPage.evaluate(() => {
-        const title =
-          document.querySelector('h1')?.textContent.trim() ||
-          document.querySelector('meta[property="og:title"]')?.content || '';
-
-        const priceEl = Array.from(document.querySelectorAll('[class*="price"], span, div')).find(e =>
-          /[0-9]+.*(Kč|€|\$)/.test(e.textContent)
-        );
-        const price = priceEl ? priceEl.textContent.trim() : '';
-
-        const img =
-          document.querySelector('meta[property="og:image"]')?.content ||
-          document.querySelector('img[src*="vinted.net"]')?.src || '';
-
-        return { title, price, img };
-      });
-
-      if (!data.title && !data.price && !data.img) {
-        console.warn('⚠️ Empty product data:', link);
-      }
-
-      // Download image
-      let localImage = data.img;
-      if (data.img && data.img.startsWith('http')) {
-        const ext = path.extname(new URL(data.img).pathname) || '.jpg';
-        const fname = sanitizeFilename(`${i}_${path.basename(link)}${ext}`);
-        localImage = await downloadImage(data.img, fname);
-      }
-
-      products.push({ link, ...data, localImage });
-    } catch (err) {
-      console.warn('⚠️ Failed to process product:', link, err.message);
-      products.push({ link, title: '', price: '', img: '', localImage: '' });
-    }
-    await prodPage.close();
+  // Auto-scroll until all items load
+  log("Scrolling page...");
+  let lastHeight = 0;
+  while (true) {
+    const height = await page.evaluate("document.body.scrollHeight");
+    if (height === lastHeight) break;
+    lastHeight = height;
+    await page.evaluate("window.scrollTo(0, document.body.scrollHeight)");
+    await page.waitForTimeout(1500);
   }
 
+  log("Extracting item data...");
+  const products = await page.evaluate(() => {
+    const items = [];
+    document.querySelectorAll("a[class*='item-card']").forEach((el) => {
+      const link = el.href;
+      const title = el.querySelector("h3, h2")?.innerText?.trim() || "";
+      const price =
+        el.querySelector("[class*='price'], [class*='Price']")?.innerText?.trim() ||
+        "";
+      const img = el.querySelector("img")?.src || "";
+      if (title && link) items.push({ link, title, price, img });
+    });
+    return items;
+  });
+
   await browser.close();
+  log(`Found ${products.length} products.`);
 
-  fs.writeFileSync(PRODUCTS_FILE, JSON.stringify(products, null, 2));
-  console.log(`💾 Saved ${products.length} products to ${PRODUCTS_FILE}`);
+  if (!SKIP_IMAGE_DOWNLOAD) {
+    log("Downloading images...");
+    for (let i = 0; i < products.length; i++) {
+      const p = products[i];
+      if (!p.img) continue;
+      const ext = path.extname(new URL(p.img).pathname) || ".jpg";
+      const fname = sanitizeFilename(`${i}_${path.basename(p.link)}${ext}`);
+      p.localImage = await downloadImage(p.img, fname);
+    }
+  } else {
+    log("⚡ Image download skipped (SKIP_IMAGE_DOWNLOAD=1).");
+    for (const p of products) p.localImage = p.img;
+  }
 
+  const result = {
+    lastUpdated: new Date().toISOString(),
+    itemCount: products.length,
+    items: products,
+  };
+  fs.writeFileSync(PRODUCTS_FILE, JSON.stringify(result, null, 2));
+  log(`💾 Saved ${products.length} items to products.json`);
   return products;
 }
 
-// Run if executed directly
-if (require.main === module) {
-  syncProfile().catch(console.error);
-}
-
 module.exports = { syncProfile, PRODUCTS_FILE };
-
-/*
-----------------------------------------
-📦 HOW TO USE (for your GitHub repo)
-----------------------------------------
-1. npm install puppeteer-extra puppeteer-extra-plugin-stealth node-fetch@2
-2. node vintedSync.js
-3. Results:
-   - products.json with all scraped data
-   - /public/images/ with downloaded images
-4. Add this to .gitignore:
-     node_modules/
-     public/images/
-     products.json
-     debug_product_page.html
-----------------------------------------
-*/
