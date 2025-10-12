@@ -1,113 +1,56 @@
-name: Scrape and commit
+const express = require('express');
+const path = require('path');
+const fs = require('fs');
+const cron = require('node-cron');
+const { syncProfile, PRODUCTS_FILE } = require('./scraper');
 
-on:
-  schedule:
-    - cron: '*/3 * * * *' # every 3 minutes
-  workflow_dispatch: {}
-  push:
-    branches: [ main ]
+const app = express();
+const PORT = process.env.PORT || 3000;
 
-permissions:
-  contents: write
+app.use(express.json());
+app.use(express.static(path.join(__dirname)));
 
-jobs:
-  scrape:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-          fetch-depth: 0
+// ✅ Root route for health check (needed for GitHub Actions)
+app.get('/', (req, res) => {
+  res.send('OK');
+});
 
-      - name: Set up git for pushing
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
+// ✅ API to get cached products
+app.get('/api/products', (req, res) => {
+  try {
+    if (!fs.existsSync(PRODUCTS_FILE)) return res.json([]);
+    const raw = fs.readFileSync(PRODUCTS_FILE, 'utf8');
+    const data = JSON.parse(raw);
+    res.json(data);
+  } catch (err) {
+    console.error('Error reading products file', err);
+    res.status(500).send({ error: 'Failed to read products' });
+  }
+});
 
-      - name: Use Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
+// ✅ Manual trigger
+app.post('/sync', async (req, res) => {
+  try {
+    const result = await syncProfile();
+    res.json({ ok: true, synced: result.length });
+  } catch (err) {
+    console.error('Sync failed', err);
+    res.status(500).json({ ok: false, error: String(err) });
+  }
+});
 
-      - name: Install deps
-        run: npm ci
+// ✅ Cron every 5 minutes
+cron.schedule('*/5 * * * *', async () => {
+  try {
+    console.log('[cron] running sync');
+    await syncProfile();
+    console.log('[cron] sync done');
+  } catch (err) {
+    console.error('[cron] sync error', err);
+  }
+});
 
-      - name: Start server
-        env:
-          SKIP_IMAGE_DOWNLOAD: '1'
-        run: |
-          nohup node server.js &
-          echo $! > server.pid
-      - name: Wait for server to be ready
-        run: |
-          for i in {1..20}; do
-            if curl -s http://localhost:3000/ > /dev/null; then
-              echo "Server is up!"
-              exit 0
-            fi
-            echo "Waiting for server... ($i)"
-            sleep 1
-          done
-          echo "Server did not start in time" >&2
-          exit 1
-      - name: Trigger sync endpoint
-        run: |
-          curl -X POST http://localhost:3000/sync
-      - name: Stop server
-        run: |
-          kill $(cat server.pid)
-          rm server.pid
-
-      - name: Debug show working directory and diff
-        run: |
-          echo "==== Current working directory ===="
-          pwd
-          echo "==== products.json git diff ===="
-          git diff products.json || true
-          echo "==== products.json head ===="
-          head -40 products.json || true
-
-      - name: "Debug: show products.json and git status"
-        run: |
-          echo "==== Repo info ===="
-          git rev-parse --abbrev-ref HEAD || true
-          echo "HEAD:" $(git rev-parse HEAD)
-          echo "==== Files ===="
-          ls -la || true
-          echo "==== products.json check ===="
-          if [ -f products.json ]; then
-            echo "products.json exists"
-            if command -v sha256sum >/dev/null 2>&1; then
-              sha256sum products.json || true
-            else
-              shasum -a 256 products.json || true
-            fi
-            echo "---- head of products.json ----"
-            sed -n '1,120p' products.json || true
-          else
-            echo "products.json NOT FOUND"
-          fi
-          echo "==== git status (before add) ===="
-          git status --porcelain || true
-          echo "==== git ls-files --modified ===="
-          git ls-files --modified || true
-
-      - name: Commit products.json if changed
-        run: |
-          git add products.json public/images || true
-          if ! git diff --quiet --staged; then
-            echo "Staged changes:" && git diff --staged --name-only || true
-            git commit -m "chore: update products.json (scraped)"
-            echo "Pushing to origin..."
-            git push origin HEAD:main || true
-            echo "Push exit:$?"
-          else
-            echo "No changes to commit"
-          fi
-
-      - name: "Debug: git log last 5 commits"
-        run: |
-          echo "==== last commits ===="
-          git --no-pager log -n 5 --oneline || true
+// ✅ Start server on 0.0.0.0 so GitHub runner can access it
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`✅ Server running on port ${PORT}`);
+});
