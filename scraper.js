@@ -144,6 +144,15 @@ async function scrapeOnce() {
   await browser.close();
   log(`Found ${products.length} products.`);
 
+  if (products.length === 0) {
+    log("⚠️ Warning: No products found. Page structure may have changed.");
+    // Don't overwrite existing data if we found nothing
+    if (fs.existsSync(PRODUCTS_FILE)) {
+      log("📋 Keeping existing products.json file.");
+      return [];
+    }
+  }
+
   if (!SKIP_IMAGE_DOWNLOAD) {
     log("Downloading images...");
     for (let i = 0; i < products.length; i++) {
