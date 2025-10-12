@@ -1,19 +1,45 @@
-const puppeteer = require('puppeteer');
+/**
+ * 🧭 Vinted Profile Scraper
+ * ---------------------------------
+ * Scrapes all listings from a Vinted profile (title, price, image, link)
+ * and saves them locally as JSON + downloaded images.
+ *
+ * ✅ Uses Puppeteer Stealth Plugin to avoid detection
+ * ✅ Auto-scrolls to load all listings
+ * ✅ Saves results to products.json
+ * ✅ Downloads images to /public/images
+ *
+ * Run with:   node vintedSync.js
+ * Dependencies: puppeteer-extra, puppeteer-extra-plugin-stealth, node-fetch@2
+ */
+
+const puppeteer = require('puppeteer-extra');
+const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+const fetch = require('node-fetch');
 const fs = require('fs');
 const path = require('path');
 
+puppeteer.use(StealthPlugin());
+
+// === CONFIG ===
 const PROFILE_URL = 'https://www.vinted.cz/member/288077372-praguevintageshop';
 const PRODUCTS_FILE = path.join(__dirname, 'products.json');
 const IMAGES_DIR = path.join(__dirname, 'public', 'images');
+
+// Ensure folders exist
+if (!fs.existsSync(path.join(__dirname, 'public'))) fs.mkdirSync(path.join(__dirname, 'public'));
 if (!fs.existsSync(IMAGES_DIR)) fs.mkdirSync(IMAGES_DIR, { recursive: true });
+
+// === HELPERS ===
+function sanitizeFilename(s) {
+  return s.replace(/[^a-z0-9-_\.]/gi, '_').slice(0, 200);
+}
 
 async function downloadImage(url, filename) {
   const outPath = path.join(IMAGES_DIR, filename);
   try {
-    // Dynamically import node-fetch for Node.js streaming
-    const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
     const res = await fetch(url);
-    if (!res.ok) throw new Error('Failed to fetch image');
+    if (!res.ok) throw new Error(`Fetch failed: ${res.statusText}`);
     const fileStream = fs.createWriteStream(outPath);
     await new Promise((resolve, reject) => {
       res.body.pipe(fileStream);
@@ -22,34 +48,50 @@ async function downloadImage(url, filename) {
     });
     return `/public/images/${filename}`;
   } catch (err) {
-    console.warn('Failed to download image', url, err.message);
+    console.warn('⚠️ Failed to download image:', url, err.message);
     return url;
   }
 }
 
-function sanitizeFilename(s) {
-  return s.replace(/[^a-z0-9-_\.]/gi, '_').slice(0, 200);
+async function autoScroll(page) {
+  await page.evaluate(async () => {
+    await new Promise((resolve) => {
+      let totalHeight = 0;
+      const distance = 600;
+      const timer = setInterval(() => {
+        const scrollHeight = document.body.scrollHeight;
+        window.scrollBy(0, distance);
+        totalHeight += distance;
+        if (totalHeight >= scrollHeight - window.innerHeight) {
+          clearInterval(timer);
+          resolve();
+        }
+      }, 500);
+    });
+  });
 }
 
+// === MAIN ===
 async function syncProfile() {
-  console.log('Syncing profile (puppeteer)', PROFILE_URL);
+  console.log(`🧭 Syncing profile: ${PROFILE_URL}`);
 
-  // Allow CI (GitHub Actions) to use Puppeteer's bundled Chromium. Do not hardcode executablePath.
-  const launchOptions = {
-    headless: 'new',
+  const browser = await puppeteer.launch({
+    headless: true,
     args: ['--no-sandbox', '--disable-setuid-sandbox']
-  };
-  if (process.env.PUPPETEER_EXECUTABLE_PATH) {
-    launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
-  }
-  const browser = await puppeteer.launch(launchOptions);
+  });
   const page = await browser.newPage();
+
+  await page.setUserAgent(
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122.0 Safari/537.36'
+  );
+  await page.setViewport({ width: 1280, height: 900 });
+
   await page.goto(PROFILE_URL, { waitUntil: 'networkidle2', timeout: 60000 });
 
-  // Wait for product tiles to appear
-  await page.waitForSelector('a[href*="/items/"]', { timeout: 20000 }).catch(() => {});
+  console.log('🔄 Scrolling to load all items...');
+  await autoScroll(page);
 
-  // Extract product links from the DOM
+  console.log('📦 Extracting product links...');
   const productLinks = await page.evaluate(() => {
     const items = Array.from(document.querySelectorAll('a[href*="/items/"]'));
     const seen = new Set();
@@ -58,91 +100,91 @@ async function syncProfile() {
       const href = el.getAttribute('href');
       if (!href) continue;
       const full = href.startsWith('http') ? href : `https://www.vinted.cz${href}`;
-      if (seen.has(full)) continue;
-      seen.add(full);
-      links.push(full);
+      if (!seen.has(full)) {
+        seen.add(full);
+        links.push(full);
+      }
     }
     return links;
   });
 
+  console.log(`✅ Found ${productLinks.length} products`);
+
   const products = [];
-  // Visit each product page and extract info
-  for (let idx = 0; idx < productLinks.length; idx++) {
-    const link = productLinks[idx];
+
+  for (let i = 0; i < productLinks.length; i++) {
+    const link = productLinks[i];
+    console.log(`🛍️ [${i + 1}/${productLinks.length}] ${link}`);
+    const prodPage = await browser.newPage();
     try {
-      const prodPage = await browser.newPage();
-      const response = await prodPage.goto(link, { waitUntil: 'networkidle2', timeout: 40000 });
-      const status = response ? response.status() : 'NO_RESPONSE';
-      if (status !== 200) {
-        console.warn(`[SCRAPER] Failed to load product page: ${link} (status: ${status})`);
-      }
-      // Wait for main content: h1, price, or image
-      await prodPage.waitForSelector('h1, [class*="price"], img[src*="vinted.net"]', { timeout: 15000 }).catch(() => {});
+      await prodPage.goto(link, { waitUntil: 'networkidle2', timeout: 40000 });
+      await prodPage.waitForSelector('h1, [class*="price"], img[src*="vinted.net"]', { timeout: 15000 });
+
       const data = await prodPage.evaluate(() => {
-        // Title: h1 or meta og:title
-        let title = '';
-        const h1 = document.querySelector('h1');
-        if (h1) title = h1.textContent.trim();
-        if (!title) {
-          const og = document.querySelector('meta[property="og:title"]');
-          if (og) title = og.getAttribute('content') || '';
-        }
-        // Price: look for any element with a currency
-        let price = '';
-        const priceEl = Array.from(document.querySelectorAll('[class*="price"], span, div')).find(e => /[0-9]+.*(Kč|€|\$)/.test(e.textContent));
-        if (priceEl) price = priceEl.textContent.trim();
-        // Image: og:image or first vinted.net image
-        let img = '';
-        const ogimg = document.querySelector('meta[property="og:image"]');
-        if (ogimg) img = ogimg.getAttribute('content') || '';
-        if (!img) {
-          const imgEl = document.querySelector('img[src*="vinted.net"]');
-          if (imgEl) img = imgEl.src;
-        }
+        const title =
+          document.querySelector('h1')?.textContent.trim() ||
+          document.querySelector('meta[property="og:title"]')?.content || '';
+
+        const priceEl = Array.from(document.querySelectorAll('[class*="price"], span, div')).find(e =>
+          /[0-9]+.*(Kč|€|\$)/.test(e.textContent)
+        );
+        const price = priceEl ? priceEl.textContent.trim() : '';
+
+        const img =
+          document.querySelector('meta[property="og:image"]')?.content ||
+          document.querySelector('img[src*="vinted.net"]')?.src || '';
+
         return { title, price, img };
       });
-      // If all fields are empty, log HTML for debugging (only for first product)
-      if (!data.title && !data.price && !data.img && idx === 0) {
-        const html = await prodPage.content();
-        require('fs').writeFileSync('debug_product_page.html', html);
-        console.warn(`[SCRAPER] Extracted nothing from: ${link} (status: ${status})`);
+
+      if (!data.title && !data.price && !data.img) {
+        console.warn('⚠️ Empty product data:', link);
       }
-      products.push({ link, ...data });
-      await prodPage.close();
+
+      // Download image
+      let localImage = data.img;
+      if (data.img && data.img.startsWith('http')) {
+        const ext = path.extname(new URL(data.img).pathname) || '.jpg';
+        const fname = sanitizeFilename(`${i}_${path.basename(link)}${ext}`);
+        localImage = await downloadImage(data.img, fname);
+      }
+
+      products.push({ link, ...data, localImage });
     } catch (err) {
-      console.warn(`[SCRAPER] Exception for product: ${link} - ${err}`);
-      products.push({ link, title: '', price: '', img: '' });
+      console.warn('⚠️ Failed to process product:', link, err.message);
+      products.push({ link, title: '', price: '', img: '', localImage: '' });
     }
+    await prodPage.close();
   }
+
   await browser.close();
 
-  // Download images and add localImage
-  const skipImages = process.env.SKIP_IMAGE_DOWNLOAD === '1';
-  for (let i = 0; i < products.length; i++) {
-    const p = products[i];
-    if (p.img && p.img.startsWith('http')) {
-      if (skipImages) {
-        p.localImage = p.img;
-        continue;
-      }
-      try {
-        const ext = path.extname(new URL(p.img).pathname) || '.jpg';
-        const fname = sanitizeFilename(`${i}_${path.basename(p.link)}${ext}`);
-        // Use node-fetch for image download
-        const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
-        const local = await downloadImage(p.img, fname, fetch);
-        p.localImage = local;
-      } catch (err) {
-        p.localImage = p.img;
-      }
-    } else {
-      p.localImage = p.img;
-    }
-  }
-
   fs.writeFileSync(PRODUCTS_FILE, JSON.stringify(products, null, 2));
-  console.log('Saved', products.length, 'products to', PRODUCTS_FILE);
+  console.log(`💾 Saved ${products.length} products to ${PRODUCTS_FILE}`);
+
   return products;
 }
 
+// Run if executed directly
+if (require.main === module) {
+  syncProfile().catch(console.error);
+}
+
 module.exports = { syncProfile, PRODUCTS_FILE };
+
+/*
+----------------------------------------
+📦 HOW TO USE (for your GitHub repo)
+----------------------------------------
+1. npm install puppeteer-extra puppeteer-extra-plugin-stealth node-fetch@2
+2. node vintedSync.js
+3. Results:
+   - products.json with all scraped data
+   - /public/images/ with downloaded images
+4. Add this to .gitignore:
+     node_modules/
+     public/images/
+     products.json
+     debug_product_page.html
+----------------------------------------
+*/
