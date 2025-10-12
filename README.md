@@ -37,9 +37,11 @@ This starts the server on http://localhost:3000. The frontend (`index.html`) wil
 ## How It Works
 
 - The GitHub Actions workflow (`.github/workflows/scrape-and-commit.yml`) scrapes the Vinted profile every 3 minutes and updates `products.json`
-- Another workflow (`.github/workflows/deploy-pages.yml`) deploys the static site to GitHub Pages
+- Another workflow (`.github/workflows/deploy-pages.yml`) deploys the static site to GitHub Pages whenever changes are pushed to the main branch
 - The `index.html` page fetches data from `products.json` and displays the products
 - Product images are loaded from Vinted's CDN (external URLs)
+
+**Note on Scheduled Workflows:** GitHub Actions scheduled workflows only run on the default branch and may be disabled in repositories with limited activity. You can also manually trigger the workflow from the Actions tab using the "Run workflow" button.
 
 ## Notes and Limitations
 
