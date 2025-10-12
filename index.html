@@ -294,7 +294,9 @@ const productsContainer = document.getElementById('products-container');
 async function loadProducts() {
   try {
     const res = await fetch('products.json');
-    productsData = await res.json();
+    const data = await res.json();
+    // Handle both array format and object with items property
+    productsData = Array.isArray(data) ? data : (data.items || []);
     renderProducts();
   } catch (err) {
     console.error('Failed to load products', err);
@@ -403,11 +405,11 @@ function openZoom(i) {
 backBtn.addEventListener('click', () => {
   if (!zoomedWrapper) return;
   zoomedWrapper.remove();
-  items.forEach(i => i.classList.remove('fade-out'));
+  items().forEach(i => i.classList.remove('fade-out'));
   wrapper.style.opacity = '1';
   zoomedWrapper = null;
   backBtn.style.display = 'none';
-}); 
+});
 
 window.onload = initialSequence;
 
@@ -424,6 +426,6 @@ function updateClock() {
 setInterval(updateClock, 1000);
 </script>
 
-<div class="item"><div id="digital-clock"></div></div>
+<div id="digital-clock"></div>
 </body>
 </html>

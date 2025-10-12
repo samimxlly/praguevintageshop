@@ -16,6 +16,7 @@
     "node-cron": "^3.0.2",
     "node-fetch": "^2.7.0",
     "puppeteer": "^24.24.0",
-    "puppeteer-extra": "^3.3.6"
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2"
   }
 }
