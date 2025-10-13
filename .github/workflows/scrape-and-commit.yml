@@ -24,6 +24,9 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Install Chrome for Puppeteer
+        run: npx puppeteer browsers install chrome
+
       - name: Run scraper
         env:
           SKIP_IMAGE_DOWNLOAD: '1'
