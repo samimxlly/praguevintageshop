@@ -11,25 +11,25 @@ on:
 jobs:
   scrape:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
-        
+
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
           node-version: '18'
-          
+
       - name: Install dependencies
         run: npm install
-        
+
       - name: Run scraper
         run: node scraper.js
-        
+
       - name: Commit and push changes
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git add products.json
-          git diff --quiet && git diff --staged --quiet || (git commit -m "Update products data" && git push)
+          git add products.json public/images
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Update products data and images" && git push)
