@@ -38,6 +38,11 @@ jobs:
           SKIP_IMAGE_DOWNLOAD: '1'
         run: node scraper.js
 
+      - name: Record scrape timestamp (force change)
+        run: |
+          date -u +"%Y-%m-%dT%H:%M:%SZ" > .last_scrape.txt
+          echo "Wrote .last_scrape.txt with timestamp:" $(cat .last_scrape.txt)
+
       - name: Check for changes
         run: |
           echo "=== Git status ==="
@@ -48,15 +53,21 @@ jobs:
           ls -la products.json
           head -10 products.json
 
-      - name: Commit and push changes
+      - name: Commit and push changes (always)
         run: |
+          set -e
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git add products.json
-          if ! git diff --staged --quiet; then
-            echo "Changes detected, committing..."
-            git commit -m "Update products data - $(date)"
-            git push origin HEAD:main
-          else
-            echo "No changes to commit"
-          fi
+          # Stage products and timestamp marker so there is always something to commit
+          git add products.json .last_scrape.txt || true
+          # Always create a commit, even if nothing changed, to poke GitHub Pages
+          git commit -m "Update products data - $(date -u +'%Y-%m-%dT%H:%M:%SZ')" --allow-empty || true
+          # Push with up to 3 retries in case of race conditions
+          for i in 1 2 3; do
+            if git push origin HEAD:main; then
+              echo "Pushed successfully on attempt $i"; break
+            fi
+            echo "Push failed (attempt $i). Rebasing and retrying..."
+            git pull --rebase origin main || true
+            sleep 2
+          done
