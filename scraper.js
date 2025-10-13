@@ -79,17 +79,31 @@ async function scrapeOnce() {
   const browser = await puppeteer.launch(launchOptions);
   const page = await browser.newPage();
 
-  await page.goto(PROFILE_URL, { waitUntil: "networkidle2", timeout: 0 });
+  // Set a realistic user agent
+  await page.setUserAgent(
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+  );
+
+  await page.goto(PROFILE_URL, { waitUntil: "networkidle2", timeout: 60000 });
+
+  // Wait for items to load
+  try {
+    await page.waitForSelector("a[class*='item-card']", { timeout: 10000 });
+  } catch (err) {
+    log("⚠️ Items didn't load, trying to continue anyway...");
+  }
 
   // Auto-scroll until all items load
   log("Scrolling page...");
   let lastHeight = 0;
-  while (true) {
+  let scrollAttempts = 0;
+  while (scrollAttempts < 10) {
     const height = await page.evaluate("document.body.scrollHeight");
     if (height === lastHeight) break;
     lastHeight = height;
     await page.evaluate("window.scrollTo(0, document.body.scrollHeight)");
     await page.waitForTimeout(1500);
+    scrollAttempts++;
   }
 
   log("Extracting item data...");
@@ -97,18 +111,47 @@ async function scrapeOnce() {
     const items = [];
     document.querySelectorAll("a[class*='item-card']").forEach((el) => {
       const link = el.href;
-      const title = el.querySelector("h3, h2")?.innerText?.trim() || "";
-      const price =
-        el.querySelector("[class*='price'], [class*='Price']")?.innerText?.trim() ||
-        "";
+      
+      // Try multiple selectors for title
+      let title = "";
+      const titleEl = el.querySelector("h3, h2, [class*='ItemBox_title'], [class*='title']");
+      if (titleEl) {
+        title = titleEl.innerText?.trim() || titleEl.textContent?.trim() || "";
+      }
+      
+      // Try multiple selectors for price  
+      let price = "";
+      const priceEl = el.querySelector("[class*='ItemBox_price'], [class*='Price'], [class*='price']");
+      if (priceEl) {
+        const priceText = priceEl.innerText?.trim() || priceEl.textContent?.trim() || "";
+        // Only use price if it's reasonably short (actual prices are short)
+        if (priceText && priceText.length < 100) {
+          price = priceText;
+        }
+      }
+      
+      // Get image
       const img = el.querySelector("img")?.src || "";
-      if (title && link) items.push({ link, title, price, img });
+      
+      // Only add if we have at least a link and title, and filter out navigation/header text
+      if (title && link && !title.includes("Přejít na obsah") && !title.includes("Katalog") && title.length < 200) {
+        items.push({ link, title, price, img });
+      }
     });
     return items;
   });
 
   await browser.close();
   log(`Found ${products.length} products.`);
+
+  if (products.length === 0) {
+    log("⚠️ Warning: No products found. Page structure may have changed.");
+    // Don't overwrite existing data if we found nothing
+    if (fs.existsSync(PRODUCTS_FILE)) {
+      log("📋 Keeping existing products.json file.");
+      return [];
+    }
+  }
 
   if (!SKIP_IMAGE_DOWNLOAD) {
     log("Downloading images...");
@@ -124,12 +167,7 @@ async function scrapeOnce() {
     for (const p of products) p.localImage = p.img;
   }
 
-  const result = {
-    lastUpdated: new Date().toISOString(),
-    itemCount: products.length,
-    items: products,
-  };
-  fs.writeFileSync(PRODUCTS_FILE, JSON.stringify(result, null, 2));
+  fs.writeFileSync(PRODUCTS_FILE, JSON.stringify(products, null, 2));
   log(`💾 Saved ${products.length} items to products.json`);
   return products;
 }
