@@ -293,10 +293,21 @@ const productsContainer = document.getElementById('products-container');
 
 async function loadProducts() {
   try {
-    const res = await fetch('products.json');
+    // Bypass CDN/browser caches to always get the latest data from GitHub Pages
+    const cacheBuster = Date.now();
+    const res = await fetch(`products.json?cb=${cacheBuster}`, {
+      cache: 'no-store',
+      headers: {
+        'Cache-Control': 'no-store'
+      }
+    });
     const data = await res.json();
     // Handle both old array format and new object format
     productsData = data.items || data;
+    console.log('Loaded products.json', {
+      lastUpdated: data.lastUpdated,
+      itemCount: data.itemCount || (Array.isArray(data) ? data.length : undefined)
+    });
     renderProducts();
   } catch (err) {
     console.error('Failed to load products', err);
