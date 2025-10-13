@@ -121,12 +121,13 @@ async function scrapeOnce() {
         price = priceMatch ? priceMatch[1] : '';
       }
       
-      // Get image - look in the parent container
+      // Get image - look in the parent container and siblings
       let img = '';
       const parentBox = linkEl.closest('[class*="new-item-box"]');
-      if (parentBox) {
-        const imgEl = parentBox.querySelector('img');
-        img = imgEl?.src || imgEl?.getAttribute('data-src') || '';
+      if (parentBox && parentBox.parentElement) {
+        // Images are often in sibling elements
+        const imgEl = parentBox.parentElement.querySelector('img.web_ui__Image__content, img[src*="vinted.net"]');
+        img = imgEl?.src || '';
       }
       
       // Only add if we have essential data

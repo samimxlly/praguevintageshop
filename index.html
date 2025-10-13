@@ -294,7 +294,9 @@ const productsContainer = document.getElementById('products-container');
 async function loadProducts() {
   try {
     const res = await fetch('products.json');
-    productsData = await res.json();
+    const data = await res.json();
+    // Handle both old array format and new object format
+    productsData = data.items || data;
     renderProducts();
   } catch (err) {
     console.error('Failed to load products', err);
