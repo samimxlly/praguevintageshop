@@ -53,6 +53,7 @@ async function downloadImage(url, filename) {
  * Scrape with retry logic
  */
 async function syncProfile(maxRetries = 3) {
+  console.log("Starting scraper...");
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       return await scrapeOnce();
@@ -89,21 +90,51 @@ async function scrapeOnce() {
     if (height === lastHeight) break;
     lastHeight = height;
     await page.evaluate("window.scrollTo(0, document.body.scrollHeight)");
-    await page.waitForTimeout(1500);
+    await new Promise(resolve => setTimeout(resolve, 1500));
   }
 
   log("Extracting item data...");
   const products = await page.evaluate(() => {
     const items = [];
-    document.querySelectorAll("a[class*='item-card']").forEach((el) => {
-      const link = el.href;
-      const title = el.querySelector("h3, h2")?.innerText?.trim() || "";
-      const price =
-        el.querySelector("[class*='price'], [class*='Price']")?.innerText?.trim() ||
-        "";
-      const img = el.querySelector("img")?.src || "";
-      if (title && link) items.push({ link, title, price, img });
+    
+    // Use the correct selector for current Vinted structure
+    const productLinks = document.querySelectorAll('a[href*="/items/"]');
+    
+    productLinks.forEach((linkEl) => {
+      const link = linkEl.href;
+      
+      // Get title from the title attribute or nearby text
+      let title = linkEl.getAttribute('title') || '';
+      if (!title) {
+        // Try to find title in parent container
+        const parentBox = linkEl.closest('[class*="new-item-box"]');
+        if (parentBox) {
+          const titleEl = parentBox.querySelector('h3, h2, [class*="title"]');
+          title = titleEl?.innerText?.trim() || '';
+        }
+      }
+      
+      // Extract price from title attribute or nearby elements
+      let price = '';
+      if (title.includes('Kč')) {
+        const priceMatch = title.match(/(\d+(?:,\d+)?\s*Kč)/);
+        price = priceMatch ? priceMatch[1] : '';
+      }
+      
+      // Get image - look in the parent container
+      let img = '';
+      const parentBox = linkEl.closest('[class*="new-item-box"]');
+      if (parentBox) {
+        const imgEl = parentBox.querySelector('img');
+        img = imgEl?.src || imgEl?.getAttribute('data-src') || '';
+      }
+      
+      // Only add if we have essential data
+      if (title && link) {
+        items.push({ link, title, price, img });
+      }
     });
+    
     return items;
   });
 
@@ -131,7 +162,9 @@ async function scrapeOnce() {
   };
   fs.writeFileSync(PRODUCTS_FILE, JSON.stringify(result, null, 2));
   log(`💾 Saved ${products.length} items to products.json`);
+  console.log("Scraper finished!");
   return products;
 }
 
 module.exports = { syncProfile, PRODUCTS_FILE };
+
