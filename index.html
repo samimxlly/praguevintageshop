@@ -312,7 +312,8 @@ function renderProducts() {
     const imgWrap = document.createElement('div');
     imgWrap.className = 'image-wrapper';
     const img = document.createElement('img');
-    img.src = p.localImage || p.img || 'test.png';
+    // Use original Vinted image URL instead of local image for GitHub Pages
+    img.src = p.img || p.localImage || 'test.png';
     img.alt = p.title || 'Product';
     imgWrap.appendChild(img);
 

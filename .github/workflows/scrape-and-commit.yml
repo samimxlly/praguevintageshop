@@ -25,6 +25,8 @@ jobs:
         run: npm install
 
       - name: Run scraper
+        env:
+          SKIP_IMAGE_DOWNLOAD: '1'
         run: node scraper.js
 
       - name: Commit and push changes
