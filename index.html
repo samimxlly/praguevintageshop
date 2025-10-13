@@ -293,22 +293,35 @@ const productsContainer = document.getElementById('products-container');
 
 async function loadProducts() {
   try {
-    // Bypass CDN/browser caches to always get the latest data from GitHub Pages
+    // Always bypass caches; prefer raw.githubusercontent.com (faster deploy) and fallback to local file
     const cacheBuster = Date.now();
-    const res = await fetch(`products.json?cb=${cacheBuster}`, {
-      cache: 'no-store',
-      headers: {
-        'Cache-Control': 'no-store'
+    const sources = [
+      `https://raw.githubusercontent.com/samimxlly/praguevintageshop/main/products.json?cb=${cacheBuster}`,
+      `products.json?cb=${cacheBuster}`
+    ];
+
+    let loaded = false;
+    for (const url of sources) {
+      try {
+        const res = await fetch(url, {
+          cache: 'no-store',
+          headers: { 'Cache-Control': 'no-store' }
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        productsData = data.items || data;
+        console.log('Loaded products from', url, {
+          lastUpdated: data.lastUpdated,
+          itemCount: data.itemCount || (Array.isArray(data) ? data.length : undefined)
+        });
+        renderProducts();
+        loaded = true;
+        break;
+      } catch (e) {
+        console.warn('Failed to load from', url, e);
       }
-    });
-    const data = await res.json();
-    // Handle both old array format and new object format
-    productsData = data.items || data;
-    console.log('Loaded products.json', {
-      lastUpdated: data.lastUpdated,
-      itemCount: data.itemCount || (Array.isArray(data) ? data.length : undefined)
-    });
-    renderProducts();
+    }
+    if (!loaded) throw new Error('All product sources failed');
   } catch (err) {
     console.error('Failed to load products', err);
   }
