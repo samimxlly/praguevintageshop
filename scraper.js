@@ -169,3 +169,16 @@ async function scrapeOnce() {
 
 module.exports = { syncProfile, PRODUCTS_FILE };
 
+// Run the scraper if this file is executed directly
+if (require.main === module) {
+  syncProfile()
+    .then(() => {
+      console.log('Scraper completed successfully!');
+      process.exit(0);
+    })
+    .catch((error) => {
+      console.error('Scraper failed:', error);
+      process.exit(1);
+    });
+}
+

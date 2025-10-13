@@ -29,9 +29,25 @@ jobs:
           SKIP_IMAGE_DOWNLOAD: '1'
         run: node scraper.js
 
+      - name: Check for changes
+        run: |
+          echo "=== Git status ==="
+          git status
+          echo "=== Git diff ==="
+          git diff products.json || echo "No diff for products.json"
+          echo "=== Products.json info ==="
+          ls -la products.json
+          head -10 products.json
+
       - name: Commit and push changes
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git add products.json public/images
-          git diff --quiet && git diff --staged --quiet || (git commit -m "Update products data and images" && git push)
+          git add products.json
+          if ! git diff --staged --quiet; then
+            echo "Changes detected, committing..."
+            git commit -m "Update products data - $(date)"
+            git push
+          else
+            echo "No changes to commit"
+          fi
